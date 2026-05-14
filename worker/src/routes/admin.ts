@@ -12,7 +12,7 @@ adminRoutes.use('*', adminAuth)
 type SqlValue = string | number | null
 
 async function clearApiKeyCache(env: AppEnv['Bindings'], keyHash: string) {
-  await env.API_KEY_CACHE.delete(`api-key:${keyHash}`)
+  await env.CACHE.delete(`api-key:${keyHash}`)
 }
 
 function pagination(c: Context<AppEnv>) {
@@ -461,7 +461,7 @@ adminRoutes.put('/settings', async (c) => {
     ).bind(key, JSON.stringify(value), c.get('adminUser').id),
   )
   if (statements.length) await c.env.DB.batch(statements)
-  await c.env.SETTINGS_CACHE.delete('settings:all')
+  await c.env.CACHE.delete('settings:all')
   await writeAudit(c.env, { actorUserId: c.get('adminUser').id, action: 'settings.update', resourceType: 'settings' })
   return ok(c, { success: true })
 })

@@ -9,23 +9,10 @@ enabled = true
 [[d1_databases]]
 binding = "DB"
 database_name = "cloud_omproxy"
-database_id = "replace-with-your-d1-database-id"
+migrations_dir = "migrations"
 
 [[kv_namespaces]]
-binding = "API_KEY_CACHE"
-id = "replace-with-api-key-cache-kv-id"
-
-[[kv_namespaces]]
-binding = "SETTINGS_CACHE"
-id = "replace-with-settings-cache-kv-id"
-
-[[kv_namespaces]]
-binding = "RATE_LIMIT"
-id = "replace-with-rate-limit-kv-id"
-
-[[kv_namespaces]]
-binding = "GATEWAY_STATE"
-id = "replace-with-gateway-state-kv-id"
+binding = "CACHE"
 
 [[r2_buckets]]
 binding = "BACKUPS"
@@ -39,7 +26,3 @@ run_worker_first = true
 
 [triggers]
 crons = ["0 18 * * *"]
-
-[build]
-command = "npm --prefix ../web install && npm --prefix ../web run build"
-

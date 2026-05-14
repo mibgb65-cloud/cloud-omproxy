@@ -6,23 +6,10 @@ keep_vars = true
 [[d1_databases]]
 binding = "DB"
 database_name = "cloud_omproxy_dev"
-database_id = "replace-with-dev-d1-database-id"
+migrations_dir = "migrations"
 
 [[kv_namespaces]]
-binding = "API_KEY_CACHE"
-id = "replace-with-dev-api-key-cache-kv-id"
-
-[[kv_namespaces]]
-binding = "SETTINGS_CACHE"
-id = "replace-with-dev-settings-cache-kv-id"
-
-[[kv_namespaces]]
-binding = "RATE_LIMIT"
-id = "replace-with-dev-rate-limit-kv-id"
-
-[[kv_namespaces]]
-binding = "GATEWAY_STATE"
-id = "replace-with-dev-gateway-state-kv-id"
+binding = "CACHE"
 
 [[r2_buckets]]
 binding = "BACKUPS"
@@ -33,4 +20,3 @@ binding = "ASSETS"
 directory = "../web/dist"
 not_found_handling = "single-page-application"
 run_worker_first = true
-

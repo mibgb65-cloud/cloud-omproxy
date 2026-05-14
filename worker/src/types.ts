@@ -1,9 +1,6 @@
 export interface Env {
   DB: D1Database
-  API_KEY_CACHE: KVNamespace
-  SETTINGS_CACHE: KVNamespace
-  RATE_LIMIT: KVNamespace
-  GATEWAY_STATE: KVNamespace
+  CACHE: KVNamespace
   BACKUPS: R2Bucket
   ASSETS: Fetcher
   JWT_SECRET?: string
@@ -69,4 +66,3 @@ export interface UsageRecordInput {
   is_stream: boolean
   error_message: string | null
 }
-

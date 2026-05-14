@@ -4,7 +4,7 @@ import { hashApiKey } from '../utils/crypto'
 export async function authenticateGatewayKey(env: Env, apiKey: string): Promise<ApiKeyAuth | null> {
   const keyHash = await hashApiKey(apiKey)
   const cacheKey = `api-key:${keyHash}`
-  const cached = await env.API_KEY_CACHE.get<ApiKeyAuth>(cacheKey, 'json')
+  const cached = await env.CACHE.get<ApiKeyAuth>(cacheKey, 'json')
   if (cached) return cached
 
   const row = await env.DB.prepare(
@@ -21,7 +21,6 @@ export async function authenticateGatewayKey(env: Env, apiKey: string): Promise<
     groupStatus: row.group_status,
     keyHash,
   }
-  await env.API_KEY_CACHE.put(cacheKey, JSON.stringify(auth), { expirationTtl: 300 })
+  await env.CACHE.put(cacheKey, JSON.stringify(auth), { expirationTtl: 300 })
   return auth
 }
-

@@ -6,7 +6,7 @@ It provides:
 
 - Cloudflare Workers + Hono API gateway.
 - Cloudflare D1 for users, API keys, upstream accounts, usage logs and settings.
-- Cloudflare KV for API key, settings and short-lived gateway state cache.
+- Cloudflare KV for API key, settings and short-lived cache.
 - Cloudflare R2 for manual backups and exported files.
 - Vue 3 + Vite admin console.
 
@@ -33,6 +33,7 @@ Recommended public deployment path:
 - Use `worker` as the root directory.
 - Build the Vue admin console and Worker in the Cloudflare build step.
 - Deploy with `npx wrangler deploy`.
+- Let Wrangler provision `DB`, `CACHE` and `BACKUPS` resources for the deployer account.
 
 See [docs/github-dashboard-deploy.md](docs/github-dashboard-deploy.md) for the Dashboard-first deployment guide.
 
@@ -44,10 +45,10 @@ npm install
 npm run dev
 ```
 
-The Worker build command installs and builds the Vue app:
+For Dashboard deployments, use this build command:
 
 ```text
-npm --prefix ../web install && npm --prefix ../web run build
+npm ci && npm --prefix ../web ci && npm run build && npm --prefix ../web run build
 ```
 
 ## Required Secrets

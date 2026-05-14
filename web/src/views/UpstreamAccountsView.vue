@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { Pencil, Plus, RefreshCw, TestTube2, Trash2 } from 'lucide-vue-next'
 import { api } from '@/api/client'
 import AppModal from '@/components/AppModal.vue'
-import type { GroupItem, PageResult, UpstreamAccountItem } from '@/types'
+import type { CodexImportResult, GroupItem, PageResult, UpstreamAccountItem } from '@/types'
 import { dateTime } from '@/utils/format'
 
 const loading = ref(false)
@@ -18,7 +18,9 @@ const removing = ref<UpstreamAccountItem | null>(null)
 const form = reactive({
   name: '',
   platform: 'openai',
+  auth_type: 'api_key',
   credential: '',
+  codex_content: '',
   base_url: '',
   priority: 100,
   status: 'active',
@@ -26,6 +28,7 @@ const form = reactive({
 })
 
 const activeCount = computed(() => accounts.value.filter((account) => account.status === 'active').length)
+const codexCount = computed(() => accounts.value.filter((account) => account.auth_type === 'codex_session').length)
 
 async function load() {
   loading.value = true
@@ -46,7 +49,17 @@ async function load() {
 
 function openCreate() {
   editing.value = null
-  Object.assign(form, { name: '', platform: 'openai', credential: '', base_url: '', priority: 100, status: 'active', group_ids: groups.value.map((group) => group.id) })
+  Object.assign(form, {
+    name: '',
+    platform: 'openai',
+    auth_type: 'api_key',
+    credential: '',
+    codex_content: '',
+    base_url: '',
+    priority: 100,
+    status: 'active',
+    group_ids: groups.value.map((group) => group.id),
+  })
   modalOpen.value = true
 }
 
@@ -55,7 +68,9 @@ function openEdit(row: UpstreamAccountItem) {
   Object.assign(form, {
     name: row.name,
     platform: row.platform,
+    auth_type: row.auth_type,
     credential: '',
+    codex_content: '',
     base_url: row.base_url || '',
     priority: row.priority,
     status: row.status,
@@ -70,17 +85,44 @@ function toggleGroup(groupId: number) {
     : [...form.group_ids, groupId]
 }
 
+function codexImportSummary(result: CodexImportResult) {
+  const warnings = (result.warnings || []).map((item) => `#${item.index}${item.name ? ` ${item.name}` : ''}: ${item.message}`)
+  const errors = (result.errors || []).map((item) => `#${item.index}${item.name ? ` ${item.name}` : ''}: ${item.message}`)
+  return [
+    `Codex 导入完成：新增 ${result.created}，更新 ${result.updated}，跳过 ${result.skipped}，失败 ${result.failed}`,
+    ...errors,
+    ...warnings,
+  ].join('\n')
+}
+
 async function save() {
   saving.value = true
   error.value = ''
-  const payload = {
-    ...form,
-    base_url: form.base_url || null,
-    credential: form.credential || undefined,
-  }
   try {
-    if (editing.value) await api.put(`/api/v1/admin/upstream-accounts/${editing.value.id}`, payload)
-    else await api.post('/api/v1/admin/upstream-accounts', payload)
+    if (form.auth_type === 'codex_session' && form.codex_content.trim()) {
+      const result = await api.post<CodexImportResult>('/api/v1/admin/upstream-accounts/import/codex-session', {
+        content: form.codex_content.trim(),
+        name: form.name,
+        group_ids: form.group_ids,
+        priority: form.priority,
+        status: form.status,
+        update_existing: true,
+      })
+      notice.value = codexImportSummary(result)
+    } else {
+      const payload = {
+        name: form.name,
+        platform: form.platform,
+        credential: form.credential || undefined,
+        base_url: form.base_url || null,
+        priority: form.priority,
+        status: form.status,
+        group_ids: form.group_ids,
+      }
+      if (editing.value) await api.put(`/api/v1/admin/upstream-accounts/${editing.value.id}`, payload)
+      else await api.post('/api/v1/admin/upstream-accounts', payload)
+      notice.value = '上游账号已保存'
+    }
     modalOpen.value = false
     await load()
   } catch (err) {
@@ -135,6 +177,7 @@ onMounted(load)
     <div class="metric-grid">
       <div class="metric"><span>账号总数</span><strong>{{ accounts.length }}</strong></div>
       <div class="metric"><span>启用中</span><strong>{{ activeCount }}</strong></div>
+      <div class="metric"><span>Codex Session</span><strong>{{ codexCount }}</strong></div>
       <div class="metric"><span>可用分组</span><strong>{{ groups.length }}</strong></div>
     </div>
 
@@ -148,6 +191,7 @@ onMounted(load)
             <th>ID</th>
             <th>名称</th>
             <th>平台</th>
+            <th>凭证</th>
             <th>优先级</th>
             <th>分组</th>
             <th>状态</th>
@@ -160,8 +204,16 @@ onMounted(load)
         <tbody>
           <tr v-for="row in accounts" :key="row.id">
             <td class="mono">{{ row.id }}</td>
-            <td>{{ row.name }}</td>
+            <td>
+              <strong>{{ row.name }}</strong>
+              <div v-if="row.credential_meta?.email" class="subline">{{ row.credential_meta.email }}</div>
+              <div v-if="row.credential_meta?.expires_at" class="subline">到期 {{ dateTime(row.credential_meta.expires_at) }}</div>
+            </td>
             <td class="mono">{{ row.platform }}</td>
+            <td>
+              <span class="status">{{ row.auth_type === 'codex_session' ? 'codex' : row.auth_type }}</span>
+              <div v-if="row.auth_type === 'codex_session'" class="subline">{{ row.credential_meta?.refreshable ? '可刷新' : '不可刷新' }}</div>
+            </td>
             <td class="mono">{{ row.priority }}</td>
             <td>{{ row.group_names?.join(', ') || '-' }}</td>
             <td><span class="status" :class="`status--${row.status}`">{{ row.status }}</span></td>
@@ -176,7 +228,7 @@ onMounted(load)
               </div>
             </td>
           </tr>
-          <tr v-if="!loading && accounts.length === 0"><td colspan="10" class="muted">暂无上游账号</td></tr>
+          <tr v-if="!loading && accounts.length === 0"><td colspan="11" class="muted">暂无上游账号</td></tr>
         </tbody>
       </table>
     </div>
@@ -188,24 +240,38 @@ onMounted(load)
           <input v-model.trim="form.name" required placeholder="例如：openai-main" />
         </div>
         <div class="field">
+          <span>凭证类型</span>
+          <select v-model="form.auth_type" :disabled="Boolean(editing)" @change="form.auth_type === 'codex_session' ? form.platform = 'openai' : null">
+            <option value="api_key">API Key</option>
+            <option value="codex_session">Codex JSON / AT</option>
+          </select>
+        </div>
+        <div class="field">
           <span>平台</span>
-          <select v-model="form.platform">
+          <select v-model="form.platform" :disabled="form.auth_type === 'codex_session'">
             <option value="openai">OpenAI / Codex</option>
             <option value="anthropic">Anthropic</option>
             <option value="gemini">Gemini</option>
           </select>
         </div>
-        <div class="field">
+        <div v-if="form.auth_type === 'api_key'" class="field">
           <span>凭证</span>
-          <input v-model="form.credential" type="password" :placeholder="editing ? '留空则不替换凭证' : '上游 API Key'" :required="!editing" />
+          <input v-model="form.credential" type="password" :placeholder="editing ? '留空则不替换凭证' : '上游 API Key'" :required="!editing && form.auth_type === 'api_key'" />
         </div>
-        <div class="field">
+        <div v-if="form.auth_type === 'api_key'" class="field">
           <span>Base URL</span>
           <input v-model.trim="form.base_url" placeholder="留空使用默认地址，例如 https://api.openai.com" />
         </div>
-        <div class="field field--full">
+        <div v-if="form.auth_type === 'api_key'" class="field field--full">
           <div class="hint-box">
             OpenAI/Codex 选择 OpenAI / Codex；凭证填写 OpenAI API Key。官方接口 Base URL 留空，第三方兼容接口填写域名根地址，不要重复写 /v1。
+          </div>
+        </div>
+        <div v-if="form.auth_type === 'codex_session'" class="field field--full">
+          <span>Codex JSON / accessToken</span>
+          <textarea v-model="form.codex_content" rows="8" :required="!editing" placeholder="支持多行，每行一个 accessToken 或 JSON；含 refresh_token 时可自动刷新。" spellcheck="false"></textarea>
+          <div class="hint-box">
+            这会创建 OpenAI Codex OAuth 上游账号。sessionToken 会被忽略；没有 refresh_token 时只能用到 accessToken 过期。
           </div>
         </div>
         <div class="field">

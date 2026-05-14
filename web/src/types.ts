@@ -42,7 +42,16 @@ export interface UpstreamAccountItem {
   id: number
   name: string
   platform: 'anthropic' | 'openai' | 'gemini'
-  auth_type: 'api_key' | 'oauth'
+  auth_type: 'api_key' | 'oauth' | 'codex_session'
+  credential_meta: {
+    email?: string
+    chatgpt_account_id?: string
+    chatgpt_user_id?: string
+    organization_id?: string
+    plan_type?: string
+    expires_at?: string
+    refreshable?: boolean
+  } | null
   base_url: string | null
   status: 'active' | 'disabled' | 'error'
   priority: number
@@ -82,4 +91,20 @@ export interface BackupItem {
   error_message: string | null
   created_at: string
   completed_at: string | null
+}
+
+export interface CodexImportMessage {
+  index: number
+  name?: string
+  message: string
+}
+
+export interface CodexImportResult {
+  total: number
+  created: number
+  updated: number
+  skipped: number
+  failed: number
+  warnings?: CodexImportMessage[]
+  errors?: CodexImportMessage[]
 }

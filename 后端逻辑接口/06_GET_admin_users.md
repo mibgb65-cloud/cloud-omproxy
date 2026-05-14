@@ -3,7 +3,7 @@
 ## 1. 基本信息
 - **路径 (Path)**：`/api/v1/admin/users`
 - **方法 (Method)**：`GET`
-- **功能描述**：分页查询家庭成员和管理员账号。
+- **功能描述**：分页查询内部用户和管理员账号。
 - **前置条件**：携带有效管理员 JWT。
 
 ## 2. 请求参数 (Request)
@@ -33,8 +33,8 @@
     "items": [
       {
         "id": 2,
-        "email": "family@example.com",
-        "display_name": "Family",
+        "email": "user@example.com",
+        "display_name": "User",
         "role": "member",
         "status": "active",
         "created_at": "2026-05-14T00:00:00Z"

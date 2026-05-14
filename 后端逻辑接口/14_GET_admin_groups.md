@@ -28,7 +28,7 @@
     {
       "id": 1,
       "name": "Default",
-      "description": "默认家庭分组",
+      "description": "默认私有分组",
       "default_platform": null,
       "status": "active",
       "sort_order": 100

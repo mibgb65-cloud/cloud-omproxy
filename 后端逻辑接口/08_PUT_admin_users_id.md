@@ -3,7 +3,7 @@
 ## 1. 基本信息
 - **路径 (Path)**：`/api/v1/admin/users/:id`
 - **方法 (Method)**：`PUT`
-- **功能描述**：更新家庭成员或管理员账号信息。
+- **功能描述**：更新内部用户或管理员账号信息。
 - **前置条件**：携带有效管理员 JWT。
 
 ## 2. 请求参数 (Request)
@@ -38,7 +38,7 @@
   "code": 0,
   "data": {
     "id": 2,
-    "display_name": "Family",
+    "display_name": "User",
     "status": "active"
   }
 }

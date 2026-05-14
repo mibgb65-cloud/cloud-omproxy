@@ -3,7 +3,7 @@
 ## 1. 基本信息
 - **路径 (Path)**：`/api/v1/admin/api-keys`
 - **方法 (Method)**：`POST`
-- **功能描述**：为家庭成员创建网关 API Key。
+- **功能描述**：为内部用户创建网关 API Key。
 - **前置条件**：携带有效管理员 JWT。
 
 ## 2. 请求参数 (Request)
@@ -12,7 +12,7 @@
 - `Content-Type`: `application/json`
 
 **Body (JSON):**
-- `user_id` (Integer, 必填): 家庭成员 ID
+- `user_id` (Integer, 必填): 内部用户 ID
 - `group_id` (Integer, 选填): 分组 ID
 - `name` (String, 必填): Key 名称
 - `expires_at` (String, 选填): 过期时间

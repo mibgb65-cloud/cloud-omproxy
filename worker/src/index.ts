@@ -8,6 +8,7 @@ function shouldRunWorker(pathname: string): boolean {
     pathname.startsWith('/api/') ||
     pathname.startsWith('/v1/') ||
     pathname.startsWith('/v1beta/') ||
+    pathname.startsWith('/backend-api/codex/') ||
     pathname === '/responses' ||
     pathname.startsWith('/responses/') ||
     pathname === '/chat/completions'

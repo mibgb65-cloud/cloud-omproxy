@@ -3,7 +3,7 @@
 ## 1. 基本信息
 - **路径 (Path)**：`/api/v1/admin/users`
 - **方法 (Method)**：`POST`
-- **功能描述**：管理员创建家庭成员或额外管理员。
+- **功能描述**：管理员创建内部用户或额外管理员。
 - **前置条件**：携带有效管理员 JWT。
 
 ## 2. 请求参数 (Request)
@@ -36,8 +36,8 @@
   "code": 0,
   "data": {
     "id": 2,
-    "email": "family@example.com",
-    "display_name": "Family",
+    "email": "user@example.com",
+    "display_name": "User",
     "role": "member",
     "status": "active"
   }

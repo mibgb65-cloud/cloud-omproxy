@@ -4,7 +4,7 @@
 - **路径 (Path)**：`/v1/responses`
 - **方法 (Method)**：`POST`
 - **功能描述**：兼容 OpenAI Responses API，调度 OpenAI 上游账号并转发请求。
-- **前置条件**：携带有效家庭成员 API Key。
+- **前置条件**：携带有效内部用户 API Key。
 
 ## 2. 请求参数 (Request)
 **Header:**

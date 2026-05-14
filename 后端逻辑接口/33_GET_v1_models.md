@@ -4,7 +4,7 @@
 - **路径 (Path)**：`/v1/models`
 - **方法 (Method)**：`GET`
 - **功能描述**：返回当前 API Key 可用的 Anthropic/Claude 模型列表。
-- **前置条件**：携带有效家庭成员 API Key。
+- **前置条件**：携带有效内部用户 API Key。
 
 ## 2. 请求参数 (Request)
 **Header:**

@@ -9,6 +9,7 @@ It provides:
 - Cloudflare KV for API key, settings and short-lived cache.
 - Cloudflare R2 for manual backups and exported files.
 - Vue 3 + Vite admin console.
+- OpenAI API Key and Codex OAuth session upstream account modes.
 
 ## Project Layout
 
@@ -85,4 +86,28 @@ Content-Type: application/json
   "display_name": "Admin",
   "password": "change-me"
 }
+```
+
+## Codex Session Accounts
+
+In the admin console, open `上游账号` → `新增账号` → choose `Codex JSON / AT`.
+
+Accepted input:
+
+- One `accessToken` per line.
+- A Codex session JSON object.
+- A JSON array of session objects.
+
+If the JSON contains `refresh_token`, Cloud OMProxy can refresh the Codex access token automatically. If it only contains `access_token`, the account can be used only until that token expires.
+
+For Codex CLI style clients, use:
+
+```text
+https://<your-worker>/backend-api/codex
+```
+
+The gateway endpoint is:
+
+```text
+POST /backend-api/codex/responses
 ```

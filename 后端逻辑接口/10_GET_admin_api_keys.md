@@ -3,7 +3,7 @@
 ## 1. 基本信息
 - **路径 (Path)**：`/api/v1/admin/api-keys`
 - **方法 (Method)**：`GET`
-- **功能描述**：分页查询家庭成员 API Key。
+- **功能描述**：分页查询内部用户 API Key。
 - **前置条件**：携带有效管理员 JWT。
 
 ## 2. 请求参数 (Request)
@@ -34,7 +34,7 @@
       {
         "id": 1,
         "user_id": 2,
-        "user_name": "Family",
+        "user_name": "User",
         "group_id": 1,
         "group_name": "Default",
         "name": "Home Key",

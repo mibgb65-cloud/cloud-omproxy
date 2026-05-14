@@ -5,11 +5,34 @@ import { adminAuth } from '../middleware/auth'
 import { encryptSecret, hashApiKey, hashPassword, keyPrefix, randomToken, sha256Hex } from '../utils/crypto'
 import { fail, intParam, ok, readJson, today } from '../utils/http'
 import { writeAudit } from '../services/audit'
+import {
+  codexIdentityKeysFromMeta,
+  type CodexImportItem,
+  type CodexImportMessage,
+  normalizeCodexImportEntry,
+  parseCodexImportEntries,
+} from '../services/codex-session'
 
 export const adminRoutes = new Hono<AppEnv>()
 adminRoutes.use('*', adminAuth)
 
 type SqlValue = string | number | null
+
+interface CodexImportRequest {
+  content?: string
+  contents?: string[]
+  name?: string
+  group_ids?: unknown[]
+  priority?: number
+  status?: string
+  update_existing?: boolean
+}
+
+interface ExistingCodexAccount {
+  id: number
+  name: string
+  credential_meta_json: string | null
+}
 
 async function clearApiKeyCache(env: AppEnv['Bindings'], keyHash: string) {
   await env.CACHE.delete(`api-key:${keyHash}`)
@@ -25,6 +48,44 @@ async function listWithCount<T>(env: AppEnv['Bindings'], sql: string, countSql: 
   const items = (await env.DB.prepare(`${sql} LIMIT ? OFFSET ?`).bind(...params, pageSize, offset).all<T>()).results ?? []
   const count = await env.DB.prepare(countSql).bind(...params).first<{ total: number }>()
   return { items, total: count?.total ?? 0, page, page_size: pageSize }
+}
+
+function parseJsonObject(value: string | null): Record<string, unknown> | null {
+  if (!value) return null
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+async function bindAccountGroups(env: AppEnv['Bindings'], accountId: number, groupIds: number[], replace = false) {
+  if (replace) await env.DB.prepare('DELETE FROM account_groups WHERE account_id = ?').bind(accountId).run()
+  if (groupIds.length) {
+    await env.DB.batch(groupIds.map((groupId) => env.DB.prepare('INSERT OR IGNORE INTO account_groups (account_id, group_id) VALUES (?, ?)').bind(accountId, groupId)))
+  }
+}
+
+async function listExistingCodexAccounts(env: AppEnv['Bindings']): Promise<ExistingCodexAccount[]> {
+  return (
+    (
+      await env.DB.prepare(
+        "SELECT id, name, credential_meta_json FROM upstream_accounts WHERE platform = 'openai' AND auth_type = 'codex_session' AND deleted_at IS NULL",
+      ).all<ExistingCodexAccount>()
+    ).results ?? []
+  )
+}
+
+function findExistingCodexAccount(accounts: ExistingCodexAccount[], keys: string[]): ExistingCodexAccount | null {
+  if (!keys.length) return null
+  const wanted = new Set(keys)
+  for (const account of accounts) {
+    const meta = parseJsonObject(account.credential_meta_json)
+    if (!meta) continue
+    if (codexIdentityKeysFromMeta(meta).some((key) => wanted.has(key))) return account
+  }
+  return null
 }
 
 adminRoutes.get('/dashboard/summary', async (c) => {
@@ -309,15 +370,16 @@ adminRoutes.get('/upstream-accounts', async (c) => {
   const clause = where.join(' AND ')
   const data = await listWithCount<Record<string, unknown>>(
     c.env,
-    `SELECT a.id, a.name, a.platform, a.auth_type, a.base_url, a.priority, a.status, a.cooldown_until, a.failure_count, a.last_error_message, a.last_used_at, a.created_at, COALESCE((SELECT group_concat(ag.group_id) FROM account_groups ag WHERE ag.account_id = a.id), '') AS group_ids_csv, COALESCE((SELECT group_concat(g.name) FROM account_groups ag JOIN groups g ON g.id = ag.group_id WHERE ag.account_id = a.id), '') AS group_names_csv FROM upstream_accounts a WHERE ${clause} ORDER BY a.priority ASC, a.id DESC`,
+    `SELECT a.id, a.name, a.platform, a.auth_type, a.credential_meta_json, a.base_url, a.priority, a.status, a.cooldown_until, a.failure_count, a.last_error_message, a.last_used_at, a.created_at, COALESCE((SELECT group_concat(ag.group_id) FROM account_groups ag WHERE ag.account_id = a.id), '') AS group_ids_csv, COALESCE((SELECT group_concat(g.name) FROM account_groups ag JOIN groups g ON g.id = ag.group_id WHERE ag.account_id = a.id), '') AS group_names_csv FROM upstream_accounts a WHERE ${clause} ORDER BY a.priority ASC, a.id DESC`,
     `SELECT COUNT(*) AS total FROM upstream_accounts a WHERE ${clause}`,
     params,
     page,
     pageSize,
     offset,
   )
-  data.items = data.items.map(({ group_ids_csv, group_names_csv, ...item }) => ({
+  data.items = data.items.map(({ group_ids_csv, group_names_csv, credential_meta_json, ...item }) => ({
     ...item,
+    credential_meta: parseJsonObject(typeof credential_meta_json === 'string' ? credential_meta_json : null),
     group_ids: String(group_ids_csv || '')
       .split(',')
       .filter(Boolean)
@@ -340,17 +402,100 @@ adminRoutes.post('/upstream-accounts', async (c) => {
   }
   const cipher = await encryptSecret(credential, c.env.CREDENTIAL_SECRET)
   const result = await c.env.DB.prepare(
-    "INSERT INTO upstream_accounts (name, platform, auth_type, credential_ciphertext, base_url, priority, status) VALUES (?, ?, 'api_key', ?, ?, ?, ?)",
+    "INSERT INTO upstream_accounts (name, platform, auth_type, credential_ciphertext, credential_meta_json, base_url, priority, status) VALUES (?, ?, 'api_key', ?, NULL, ?, ?, ?)",
   )
     .bind(name, platform, cipher, body.base_url ?? null, Number(body.priority ?? 100), body.status ?? 'active')
     .run()
   const id = Number(result.meta.last_row_id)
   const groupIds = Array.isArray(body.group_ids) ? body.group_ids.map(Number).filter(Boolean) : []
-  if (groupIds.length) {
-    await c.env.DB.batch(groupIds.map((groupId) => c.env.DB.prepare('INSERT OR IGNORE INTO account_groups (account_id, group_id) VALUES (?, ?)').bind(id, groupId)))
-  }
+  await bindAccountGroups(c.env, id, groupIds)
   await writeAudit(c.env, { actorUserId: c.get('adminUser').id, action: 'upstream_account.create', resourceType: 'upstream_account', resourceId: id })
   return ok(c, { id, name, platform, status: body.status ?? 'active' })
+})
+
+adminRoutes.post('/upstream-accounts/import/codex-session', async (c) => {
+  if (!c.env.CREDENTIAL_SECRET) return fail(c, 500, 5000, 'CREDENTIAL_SECRET 未配置')
+  const body = await readJson<CodexImportRequest>(c)
+  let entries: ReturnType<typeof parseCodexImportEntries>
+  try {
+    entries = parseCodexImportEntries(body)
+  } catch (error) {
+    return fail(c, 400, 4000, error instanceof Error ? error.message : 'Codex 内容解析失败')
+  }
+  if (!entries.length) return fail(c, 400, 4000, '请输入 Codex JSON 或 accessToken')
+
+  const result = {
+    total: entries.length,
+    created: 0,
+    updated: 0,
+    skipped: 0,
+    failed: 0,
+    items: [] as CodexImportItem[],
+    warnings: [] as CodexImportMessage[],
+    errors: [] as CodexImportMessage[],
+  }
+  const groupIds = Array.isArray(body.group_ids) ? body.group_ids.map(Number).filter(Boolean) : []
+  const priority = Number(body.priority ?? 50)
+  const status = ['active', 'disabled'].includes(String(body.status)) ? String(body.status) : 'active'
+  const updateExisting = body.update_existing !== false
+  const existingAccounts = await listExistingCodexAccounts(c.env)
+  const seen = new Map<string, number>()
+
+  for (const entry of entries) {
+    let normalized: Awaited<ReturnType<typeof normalizeCodexImportEntry>>
+    try {
+      normalized = await normalizeCodexImportEntry(entry)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Codex 导入项解析失败'
+      result.failed += 1
+      result.items.push({ index: entry.index, action: 'failed', message })
+      result.errors.push({ index: entry.index, message })
+      continue
+    }
+
+    const accountNameBase = String(body.name || '').trim()
+    const accountName = accountNameBase ? (entries.length > 1 ? `${accountNameBase} #${entry.index}` : accountNameBase) : normalized.name
+    const duplicateIndex = normalized.identity_keys.map((key) => seen.get(key)).find((value) => value !== undefined)
+    if (duplicateIndex !== undefined) {
+      const message = `与第 ${duplicateIndex} 条导入项重复，已跳过`
+      result.skipped += 1
+      result.items.push({ index: entry.index, name: accountName, action: 'skipped', message })
+      result.warnings.push({ index: entry.index, name: accountName, message })
+      continue
+    }
+    for (const key of normalized.identity_keys) seen.set(key, entry.index)
+    for (const warning of normalized.warnings) result.warnings.push({ index: entry.index, name: accountName, message: warning })
+
+    const cipher = await encryptSecret(JSON.stringify(normalized.credentials), c.env.CREDENTIAL_SECRET)
+    const metaJson = JSON.stringify(normalized.meta)
+    const existing = findExistingCodexAccount(existingAccounts, normalized.identity_keys)
+    if (existing && updateExisting) {
+      await c.env.DB.prepare(
+        "UPDATE upstream_accounts SET name = ?, credential_ciphertext = ?, credential_meta_json = ?, priority = ?, status = ?, updated_at = CURRENT_TIMESTAMP, last_error_message = NULL WHERE id = ?",
+      )
+        .bind(accountName, cipher, metaJson, priority, status, existing.id)
+        .run()
+      await bindAccountGroups(c.env, existing.id, groupIds, groupIds.length > 0)
+      existing.credential_meta_json = metaJson
+      result.updated += 1
+      result.items.push({ index: entry.index, name: accountName, action: 'updated', account_id: existing.id })
+      continue
+    }
+
+    const created = await c.env.DB.prepare(
+      "INSERT INTO upstream_accounts (name, platform, auth_type, credential_ciphertext, credential_meta_json, base_url, priority, status) VALUES (?, 'openai', 'codex_session', ?, ?, NULL, ?, ?)",
+    )
+      .bind(accountName, cipher, metaJson, priority, status)
+      .run()
+    const id = Number(created.meta.last_row_id)
+    await bindAccountGroups(c.env, id, groupIds)
+    existingAccounts.push({ id, name: accountName, credential_meta_json: metaJson })
+    result.created += 1
+    result.items.push({ index: entry.index, name: accountName, action: 'created', account_id: id })
+  }
+
+  await writeAudit(c.env, { actorUserId: c.get('adminUser').id, action: 'upstream_account.import_codex_session', resourceType: 'upstream_account' })
+  return ok(c, result)
 })
 
 adminRoutes.put('/upstream-accounts/:id', async (c) => {
@@ -377,10 +522,7 @@ adminRoutes.put('/upstream-accounts/:id', async (c) => {
   }
   if (Array.isArray(body.group_ids)) {
     const groupIds = body.group_ids.map(Number).filter(Boolean)
-    await c.env.DB.prepare('DELETE FROM account_groups WHERE account_id = ?').bind(id).run()
-    if (groupIds.length) {
-      await c.env.DB.batch(groupIds.map((groupId) => c.env.DB.prepare('INSERT OR IGNORE INTO account_groups (account_id, group_id) VALUES (?, ?)').bind(id, groupId)))
-    }
+    await bindAccountGroups(c.env, id, groupIds, true)
   }
   await writeAudit(c.env, { actorUserId: c.get('adminUser').id, action: 'upstream_account.update', resourceType: 'upstream_account', resourceId: id })
   return ok(c, { id, success: true })

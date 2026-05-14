@@ -4,7 +4,7 @@
 - **路径 (Path)**：`/v1/messages`
 - **方法 (Method)**：`POST`
 - **功能描述**：兼容 Claude Messages API，按 API Key 调度 Anthropic 上游账号并转发请求。
-- **前置条件**：携带有效家庭成员 API Key。
+- **前置条件**：携带有效内部用户 API Key。
 
 ## 2. 请求参数 (Request)
 **Header:**

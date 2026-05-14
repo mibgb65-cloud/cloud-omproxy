@@ -4,7 +4,7 @@
 - **路径 (Path)**：`/responses`
 - **方法 (Method)**：`POST`
 - **功能描述**：为 Codex/Responses 客户端提供无 `/v1` 前缀的别名接口。
-- **前置条件**：携带有效家庭成员 API Key。
+- **前置条件**：携带有效内部用户 API Key。
 
 ## 2. 请求参数 (Request)
 **Header:**

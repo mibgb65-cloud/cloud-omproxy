@@ -3,7 +3,7 @@
 ## 1. 基本信息
 - **路径 (Path)**：`/api/v1/admin/api-keys/:id`
 - **方法 (Method)**：`DELETE`
-- **功能描述**：软删除家庭成员 API Key。
+- **功能描述**：软删除内部用户 API Key。
 - **前置条件**：携带有效管理员 JWT。
 
 ## 2. 请求参数 (Request)

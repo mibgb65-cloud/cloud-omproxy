@@ -37,8 +37,9 @@ export interface UpstreamAccount {
   id: number
   name: string
   platform: Platform
-  auth_type: 'api_key' | 'oauth'
+  auth_type: 'api_key' | 'oauth' | 'codex_session'
   credential_ciphertext: string
+  credential_meta_json: string | null
   base_url: string | null
   priority: number
   status: string

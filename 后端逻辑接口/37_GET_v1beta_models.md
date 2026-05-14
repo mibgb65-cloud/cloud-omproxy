@@ -4,7 +4,7 @@
 - **路径 (Path)**：`/v1beta/models`
 - **方法 (Method)**：`GET`
 - **功能描述**：兼容 Gemini 原生模型列表接口。
-- **前置条件**：携带有效家庭成员 API Key。
+- **前置条件**：携带有效内部用户 API Key。
 
 ## 2. 请求参数 (Request)
 **Header:**

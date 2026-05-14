@@ -4,7 +4,7 @@
 - **路径 (Path)**：`/v1beta/models/*modelAction`
 - **方法 (Method)**：`POST`
 - **功能描述**：兼容 Gemini `generateContent`、`streamGenerateContent` 等模型动作接口。
-- **前置条件**：携带有效家庭成员 API Key。
+- **前置条件**：携带有效内部用户 API Key。
 
 ## 2. 请求参数 (Request)
 **Header:**

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { Pencil, Plus, RefreshCw, TestTube2, Trash2 } from 'lucide-vue-next'
+import { KeyRound, Pencil, RefreshCw, TestTube2, Trash2, Upload } from 'lucide-vue-next'
 import { api } from '@/api/client'
 import AppModal from '@/components/AppModal.vue'
 import type { CodexImportResult, GroupItem, PageResult, UpstreamAccountItem } from '@/types'
@@ -15,6 +15,7 @@ const groups = ref<GroupItem[]>([])
 const modalOpen = ref(false)
 const editing = ref<UpstreamAccountItem | null>(null)
 const removing = ref<UpstreamAccountItem | null>(null)
+const quotaRefreshingId = ref<number | null>(null)
 const form = reactive({
   name: '',
   platform: 'openai',
@@ -29,6 +30,10 @@ const form = reactive({
 
 const activeCount = computed(() => accounts.value.filter((account) => account.status === 'active').length)
 const codexCount = computed(() => accounts.value.filter((account) => account.auth_type === 'codex_session').length)
+const modalTitle = computed(() => {
+  if (editing.value) return '编辑上游账号'
+  return form.auth_type === 'codex_session' ? '导入 Codex 账号' : '新增 API Key 账号'
+})
 
 async function load() {
   loading.value = true
@@ -47,7 +52,7 @@ async function load() {
   }
 }
 
-function openCreate() {
+function openCreateApiKey() {
   editing.value = null
   Object.assign(form, {
     name: '',
@@ -57,6 +62,22 @@ function openCreate() {
     codex_content: '',
     base_url: '',
     priority: 100,
+    status: 'active',
+    group_ids: groups.value.map((group) => group.id),
+  })
+  modalOpen.value = true
+}
+
+function openImportCodex() {
+  editing.value = null
+  Object.assign(form, {
+    name: '',
+    platform: 'openai',
+    auth_type: 'codex_session',
+    credential: '',
+    codex_content: '',
+    base_url: '',
+    priority: 50,
     status: 'active',
     group_ids: groups.value.map((group) => group.id),
   })
@@ -93,6 +114,40 @@ function codexImportSummary(result: CodexImportResult) {
     ...errors,
     ...warnings,
   ].join('\n')
+}
+
+function percentText(value?: number) {
+  if (typeof value !== 'number' || Number.isNaN(value)) return '-'
+  return `${Math.round(value)}%`
+}
+
+function codexWindows(row: UpstreamAccountItem) {
+  const usage = row.credential_meta?.codex_usage
+  if (!usage) return []
+  return [
+    { label: '5h', window: usage.five_hour || usage.primary },
+    { label: '7d', window: usage.seven_day || usage.secondary },
+  ].filter((item) => item.window)
+}
+
+function quotaBarStyle(available?: number) {
+  const value = typeof available === 'number' ? Math.min(Math.max(available, 0), 100) : 0
+  return { width: `${value}%` }
+}
+
+async function refreshCodexUsage(row: UpstreamAccountItem) {
+  quotaRefreshingId.value = row.id
+  error.value = ''
+  try {
+    const data = await api.post<{ credential_meta: UpstreamAccountItem['credential_meta'] }>(`/api/v1/admin/upstream-accounts/${row.id}/codex-usage`, {})
+    row.credential_meta = data.credential_meta
+    row.last_error_message = null
+    notice.value = `${row.name} 的 Codex 额度已刷新`
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : '刷新 Codex 额度失败'
+  } finally {
+    quotaRefreshingId.value = null
+  }
 }
 
 async function save() {
@@ -170,7 +225,8 @@ onMounted(load)
       </div>
       <div class="actions">
         <button class="btn btn--secondary" type="button" :disabled="loading" @click="load"><RefreshCw />刷新</button>
-        <button class="primary" type="button" @click="openCreate"><Plus />新增账号</button>
+        <button class="ghost" type="button" @click="openCreateApiKey"><KeyRound />新增 API Key</button>
+        <button class="primary" type="button" @click="openImportCodex"><Upload />导入 Codex</button>
       </div>
     </div>
 
@@ -192,6 +248,7 @@ onMounted(load)
             <th>名称</th>
             <th>平台</th>
             <th>凭证</th>
+            <th>额度</th>
             <th>优先级</th>
             <th>分组</th>
             <th>状态</th>
@@ -214,6 +271,27 @@ onMounted(load)
               <span class="status">{{ row.auth_type === 'codex_session' ? 'codex' : row.auth_type }}</span>
               <div v-if="row.auth_type === 'codex_session'" class="subline">{{ row.credential_meta?.refreshable ? '可刷新' : '不可刷新' }}</div>
             </td>
+            <td>
+              <div v-if="row.auth_type === 'codex_session'" class="quota-stack">
+                <div v-if="codexWindows(row).length === 0" class="subline">未刷新额度</div>
+                <div v-for="item in codexWindows(row)" :key="item.label" class="quota-window">
+                  <div class="quota-window__head">
+                    <span>{{ item.label }}</span>
+                    <strong>{{ percentText(item.window?.available_percent) }} 可用</strong>
+                  </div>
+                  <div class="quota-track"><span :style="quotaBarStyle(item.window?.available_percent)"></span></div>
+                  <div class="quota-window__meta">
+                    已用 {{ percentText(item.window?.used_percent) }}
+                    <template v-if="item.window?.reset_at"> · 重置 {{ dateTime(item.window.reset_at) }}</template>
+                  </div>
+                </div>
+                <div v-if="row.credential_meta?.codex_usage?.updated_at" class="subline">更新 {{ dateTime(row.credential_meta.codex_usage.updated_at) }}</div>
+                <button class="ghost btn--sm" type="button" :disabled="quotaRefreshingId === row.id" @click="refreshCodexUsage(row)">
+                  <RefreshCw />{{ quotaRefreshingId === row.id ? '刷新中' : '刷新额度' }}
+                </button>
+              </div>
+              <span v-else>-</span>
+            </td>
             <td class="mono">{{ row.priority }}</td>
             <td>{{ row.group_names?.join(', ') || '-' }}</td>
             <td><span class="status" :class="`status--${row.status}`">{{ row.status }}</span></td>
@@ -228,12 +306,12 @@ onMounted(load)
               </div>
             </td>
           </tr>
-          <tr v-if="!loading && accounts.length === 0"><td colspan="11" class="muted">暂无上游账号</td></tr>
+          <tr v-if="!loading && accounts.length === 0"><td colspan="12" class="muted">暂无上游账号</td></tr>
         </tbody>
       </table>
     </div>
 
-    <AppModal :open="modalOpen" :title="editing ? '编辑上游账号' : '新增上游账号'" eyebrow="UPSTREAM FORM" size="lg" @close="modalOpen = false">
+    <AppModal :open="modalOpen" :title="modalTitle" eyebrow="UPSTREAM FORM" size="lg" @close="modalOpen = false">
       <form id="upstream-form" class="form-grid" @submit.prevent="save">
         <div class="field">
           <span>名称</span>
@@ -241,15 +319,12 @@ onMounted(load)
         </div>
         <div class="field">
           <span>凭证类型</span>
-          <select v-model="form.auth_type" :disabled="Boolean(editing)" @change="form.auth_type === 'codex_session' ? form.platform = 'openai' : null">
-            <option value="api_key">API Key</option>
-            <option value="codex_session">Codex JSON / AT</option>
-          </select>
+          <input :value="form.auth_type === 'codex_session' ? 'Codex auth.json / accessToken' : 'API Key'" disabled />
         </div>
         <div class="field">
           <span>平台</span>
           <select v-model="form.platform" :disabled="form.auth_type === 'codex_session'">
-            <option value="openai">OpenAI / Codex</option>
+            <option value="openai">OpenAI</option>
             <option value="anthropic">Anthropic</option>
             <option value="gemini">Gemini</option>
           </select>
@@ -264,7 +339,7 @@ onMounted(load)
         </div>
         <div v-if="form.auth_type === 'api_key'" class="field field--full">
           <div class="hint-box">
-            OpenAI/Codex 选择 OpenAI / Codex；凭证填写 OpenAI API Key。官方接口 Base URL 留空，第三方兼容接口填写域名根地址，不要重复写 /v1。
+            OpenAI API Key 走 OpenAI 官方或兼容接口；官方接口 Base URL 留空，第三方兼容接口填写域名根地址，不要重复写 /v1。Codex 账号请使用右上角“导入 Codex”。
           </div>
         </div>
         <div v-if="form.auth_type === 'codex_session'" class="field field--full">

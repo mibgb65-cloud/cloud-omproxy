@@ -2,6 +2,7 @@ import { sha256Hex } from '../utils/crypto'
 
 const OPENAI_CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
 const OPENAI_TOKEN_URL = 'https://auth.openai.com/oauth/token'
+const OPENAI_CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
 const OPENAI_REFRESH_SCOPE = 'openid profile email'
 const CODEX_IMPORT_CLOCK_SKEW_SECONDS = 120
 
@@ -28,6 +29,32 @@ export interface CodexSessionMeta {
   refreshable: boolean
   imported_at: string
   access_token_sha256: string
+  codex_usage?: CodexUsageSnapshot
+}
+
+export interface CodexUsageWindow {
+  used_percent: number
+  available_percent: number
+  reset_after_seconds?: number
+  reset_at?: string
+  window_minutes?: number
+}
+
+export interface CodexUsageSnapshot {
+  updated_at: string
+  five_hour?: CodexUsageWindow
+  seven_day?: CodexUsageWindow
+  primary?: CodexUsageWindow
+  secondary?: CodexUsageWindow
+  plan_type?: string
+  limit_reached?: boolean
+  primary_used_percent?: number
+  primary_reset_after_seconds?: number
+  primary_window_minutes?: number
+  secondary_used_percent?: number
+  secondary_reset_after_seconds?: number
+  secondary_window_minutes?: number
+  primary_over_secondary_percent?: number
 }
 
 export interface CodexImportEntry {
@@ -127,6 +154,46 @@ function firstTime(obj: Record<string, unknown>, ...paths: string[][]): Date | n
 
 function unixTime(value: number): Date {
   return new Date(value > 1_000_000_000_000 ? value : value * 1000)
+}
+
+function numberFromHeader(headers: Headers, key: string): number | undefined {
+  const value = headers.get(key)
+  if (!value) return undefined
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function intFromHeader(headers: Headers, key: string): number | undefined {
+  const value = numberFromHeader(headers, key)
+  return value === undefined ? undefined : Math.trunc(value)
+}
+
+function resetAtFromSeconds(base: Date, seconds?: number): string | undefined {
+  if (seconds === undefined) return undefined
+  return new Date(base.getTime() + Math.max(seconds, 0) * 1000).toISOString()
+}
+
+function usageWindow(base: Date, usedPercent?: number, resetAfterSeconds?: number, windowMinutes?: number): CodexUsageWindow | undefined {
+  if (usedPercent === undefined && resetAfterSeconds === undefined && windowMinutes === undefined) return undefined
+  const used = Math.min(Math.max(usedPercent ?? 0, 0), 100)
+  return {
+    used_percent: used,
+    available_percent: Math.max(0, 100 - used),
+    reset_after_seconds: resetAfterSeconds,
+    reset_at: resetAtFromSeconds(base, resetAfterSeconds),
+    window_minutes: windowMinutes,
+  }
+}
+
+function percent(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  return Math.min(Math.max(Math.round(value), 0), 100)
+}
+
+function resetSecondsFromUnix(resetAt: unknown, now: Date): number | undefined {
+  const parsed = parseTime(resetAt)
+  if (!parsed) return undefined
+  return Math.max(0, Math.round((parsed.getTime() - now.getTime()) / 1000))
 }
 
 function looksLikeJson(content: string): boolean {
@@ -345,6 +412,124 @@ export function buildCodexMeta(credentials: CodexSessionCredentials, fingerprint
     imported_at: new Date().toISOString(),
     access_token_sha256: fingerprint,
   }
+}
+
+export function parseCodexUsageHeaders(headers: Headers, now = new Date()): CodexUsageSnapshot | null {
+  const primaryUsed = numberFromHeader(headers, 'x-codex-primary-used-percent')
+  const primaryReset = intFromHeader(headers, 'x-codex-primary-reset-after-seconds')
+  const primaryWindow = intFromHeader(headers, 'x-codex-primary-window-minutes')
+  const secondaryUsed = numberFromHeader(headers, 'x-codex-secondary-used-percent')
+  const secondaryReset = intFromHeader(headers, 'x-codex-secondary-reset-after-seconds')
+  const secondaryWindow = intFromHeader(headers, 'x-codex-secondary-window-minutes')
+  const overSecondary = numberFromHeader(headers, 'x-codex-primary-over-secondary-limit-percent')
+
+  if (
+    primaryUsed === undefined &&
+    primaryReset === undefined &&
+    primaryWindow === undefined &&
+    secondaryUsed === undefined &&
+    secondaryReset === undefined &&
+    secondaryWindow === undefined &&
+    overSecondary === undefined
+  ) {
+    return null
+  }
+
+  const primaryIsFiveHour = primaryWindow !== undefined && secondaryWindow !== undefined
+    ? primaryWindow < secondaryWindow
+    : primaryWindow !== undefined
+      ? primaryWindow <= 360
+      : secondaryWindow !== undefined
+        ? secondaryWindow > 360
+        : false
+  const fiveHour = primaryIsFiveHour
+    ? usageWindow(now, primaryUsed, primaryReset, primaryWindow)
+    : usageWindow(now, secondaryUsed, secondaryReset, secondaryWindow)
+  const sevenDay = primaryIsFiveHour
+    ? usageWindow(now, secondaryUsed, secondaryReset, secondaryWindow)
+    : usageWindow(now, primaryUsed, primaryReset, primaryWindow)
+  const primary = usageWindow(now, primaryUsed, primaryReset, primaryWindow)
+  const secondary = usageWindow(now, secondaryUsed, secondaryReset, secondaryWindow)
+
+  return {
+    updated_at: now.toISOString(),
+    five_hour: fiveHour,
+    seven_day: sevenDay,
+    primary,
+    secondary,
+    primary_used_percent: primaryUsed,
+    primary_reset_after_seconds: primaryReset,
+    primary_window_minutes: primaryWindow,
+    secondary_used_percent: secondaryUsed,
+    secondary_reset_after_seconds: secondaryReset,
+    secondary_window_minutes: secondaryWindow,
+    primary_over_secondary_percent: overSecondary,
+  }
+}
+
+export function parseCodexUsagePayload(payload: unknown, now = new Date()): CodexUsageSnapshot | null {
+  if (!isRecord(payload)) return null
+  const rateLimit = payload.rate_limit
+  if (!isRecord(rateLimit)) return null
+  const primaryWindow = isRecord(rateLimit.primary_window) ? rateLimit.primary_window : null
+  const secondaryWindow = isRecord(rateLimit.secondary_window) ? rateLimit.secondary_window : null
+  if (!primaryWindow && !secondaryWindow) return null
+
+  const primaryUsed = primaryWindow ? percent(Number(primaryWindow.used_percent ?? 0)) : undefined
+  const secondaryUsed = secondaryWindow ? percent(Number(secondaryWindow.used_percent ?? 0)) : undefined
+  const primaryReset = primaryWindow ? resetSecondsFromUnix(primaryWindow.reset_at, now) : undefined
+  const secondaryReset = secondaryWindow ? resetSecondsFromUnix(secondaryWindow.reset_at, now) : undefined
+  const primary = usageWindow(now, primaryUsed, primaryReset)
+  const secondary = usageWindow(now, secondaryUsed, secondaryReset)
+  return {
+    updated_at: now.toISOString(),
+    plan_type: stringValue(payload.plan_type),
+    limit_reached: rateLimit.limit_reached === true,
+    primary,
+    secondary,
+    five_hour: primary,
+    seven_day: secondary,
+    primary_used_percent: primaryUsed,
+    primary_reset_after_seconds: primaryReset,
+    secondary_used_percent: secondaryUsed,
+    secondary_reset_after_seconds: secondaryReset,
+  }
+}
+
+export async function fetchCodexUsage(credentials: CodexSessionCredentials): Promise<CodexUsageSnapshot> {
+  const response = await fetch(OPENAI_CODEX_USAGE_URL, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      Authorization: `Bearer ${credentials.access_token}`,
+      ...(credentials.chatgpt_account_id ? { 'ChatGPT-Account-Id': credentials.chatgpt_account_id } : {}),
+    },
+  })
+  const payload = (await response.json().catch(() => null)) as unknown
+  if (!response.ok) {
+    throw new Error(`Codex usage query failed: status ${response.status}`)
+  }
+  const snapshot = parseCodexUsagePayload(payload)
+  if (!snapshot) {
+    const headersSnapshot = parseCodexUsageHeaders(response.headers)
+    if (headersSnapshot) return headersSnapshot
+    throw new Error('Codex usage response did not include quota data')
+  }
+  return snapshot
+}
+
+export function mergeCodexUsageIntoMeta(metaJson: string | null, snapshot: CodexUsageSnapshot): string {
+  let meta: Record<string, unknown> = {}
+  if (metaJson) {
+    try {
+      const parsed = JSON.parse(metaJson) as unknown
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) meta = parsed as Record<string, unknown>
+    } catch {
+      meta = {}
+    }
+  }
+  meta.codex_usage = snapshot
+  return JSON.stringify(meta)
 }
 
 export function codexIdentityKeysFromMeta(meta: unknown): string[] {

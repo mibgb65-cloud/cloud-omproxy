@@ -8,6 +8,8 @@ import { estimateCost, recordUsage } from '../services/usage'
 import {
   type CodexSessionCredentials,
   isCodexTokenExpired,
+  mergeCodexUsageIntoMeta,
+  parseCodexUsageHeaders,
   refreshCodexAccessToken,
 } from '../services/codex-session'
 
@@ -162,6 +164,7 @@ async function resolveCredential(env: AppEnv['Bindings'], account: UpstreamAccou
     }
     const refreshed = await refreshCodexAccessToken(credentials)
     credentials = refreshed.credentials
+    account.credential_meta_json = JSON.stringify(refreshed.meta)
     await env.DB.prepare(
       'UPDATE upstream_accounts SET credential_ciphertext = ?, credential_meta_json = ?, updated_at = CURRENT_TIMESTAMP, last_error_message = NULL WHERE id = ?',
     )
@@ -169,6 +172,15 @@ async function resolveCredential(env: AppEnv['Bindings'], account: UpstreamAccou
       .run()
   }
   return { token: credentials.access_token, codex: credentials }
+}
+
+async function persistCodexUsageSnapshot(env: AppEnv['Bindings'], account: UpstreamAccount, response: Response) {
+  if (account.auth_type !== 'codex_session') return
+  const snapshot = parseCodexUsageHeaders(response.headers)
+  if (!snapshot) return
+  const metaJson = mergeCodexUsageIntoMeta(account.credential_meta_json, snapshot)
+  account.credential_meta_json = metaJson
+  await env.DB.prepare('UPDATE upstream_accounts SET credential_meta_json = ? WHERE id = ?').bind(metaJson, account.id).run()
 }
 
 function upstreamUrl(requestUrl: string, account: UpstreamAccount, platform: Platform, targetPath: string): string {
@@ -259,6 +271,7 @@ async function gatewayHandler(c: Context<AppEnv>) {
     })
     const response = await fetch(upstreamRequest)
     lastResponse = response
+    await persistCodexUsageSnapshot(c.env, account, response)
 
     await c.env.DB.prepare('UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?').bind(auth.apiKeyId).run()
     await c.env.DB.prepare('UPDATE upstream_accounts SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?').bind(account.id).run()

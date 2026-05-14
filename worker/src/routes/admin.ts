@@ -2,15 +2,20 @@ import { Hono } from 'hono'
 import type { Context } from 'hono'
 import type { AppEnv } from '../types'
 import { adminAuth } from '../middleware/auth'
-import { encryptSecret, hashApiKey, hashPassword, keyPrefix, randomToken, sha256Hex } from '../utils/crypto'
+import { decryptSecret, encryptSecret, hashApiKey, hashPassword, keyPrefix, randomToken, sha256Hex } from '../utils/crypto'
 import { fail, intParam, ok, readJson, today } from '../utils/http'
 import { writeAudit } from '../services/audit'
 import {
   codexIdentityKeysFromMeta,
+  type CodexSessionCredentials,
+  fetchCodexUsage,
+  isCodexTokenExpired,
+  mergeCodexUsageIntoMeta,
   type CodexImportItem,
   type CodexImportMessage,
   normalizeCodexImportEntry,
   parseCodexImportEntries,
+  refreshCodexAccessToken,
 } from '../services/codex-session'
 
 export const adminRoutes = new Hono<AppEnv>()
@@ -31,6 +36,12 @@ interface CodexImportRequest {
 interface ExistingCodexAccount {
   id: number
   name: string
+  credential_meta_json: string | null
+}
+
+interface StoredCodexAccount {
+  id: number
+  credential_ciphertext: string
   credential_meta_json: string | null
 }
 
@@ -86,6 +97,14 @@ function findExistingCodexAccount(accounts: ExistingCodexAccount[], keys: string
     if (codexIdentityKeysFromMeta(meta).some((key) => wanted.has(key))) return account
   }
   return null
+}
+
+function codexCredentialsFromJson(value: string): CodexSessionCredentials {
+  const parsed = JSON.parse(value) as unknown
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Codex credential payload is invalid')
+  const credentials = parsed as Partial<CodexSessionCredentials>
+  if (!credentials.access_token || typeof credentials.access_token !== 'string') throw new Error('Codex access_token not found')
+  return credentials as CodexSessionCredentials
 }
 
 adminRoutes.get('/dashboard/summary', async (c) => {
@@ -526,6 +545,50 @@ adminRoutes.put('/upstream-accounts/:id', async (c) => {
   }
   await writeAudit(c.env, { actorUserId: c.get('adminUser').id, action: 'upstream_account.update', resourceType: 'upstream_account', resourceId: id })
   return ok(c, { id, success: true })
+})
+
+adminRoutes.post('/upstream-accounts/:id/codex-usage', async (c) => {
+  if (!c.env.CREDENTIAL_SECRET) return fail(c, 500, 5000, 'CREDENTIAL_SECRET 未配置')
+  const id = Number(c.req.param('id'))
+  const account = await c.env.DB.prepare(
+    "SELECT id, credential_ciphertext, credential_meta_json FROM upstream_accounts WHERE id = ? AND platform = 'openai' AND auth_type = 'codex_session' AND deleted_at IS NULL",
+  )
+    .bind(id)
+    .first<StoredCodexAccount>()
+  if (!account) return fail(c, 404, 4040, 'Codex 上游账号不存在')
+
+  try {
+    let credentials = codexCredentialsFromJson(await decryptSecret(account.credential_ciphertext, c.env.CREDENTIAL_SECRET))
+    let metaJson = account.credential_meta_json
+    let cipher: string | null = null
+    if (isCodexTokenExpired(credentials)) {
+      if (!credentials.refresh_token) return fail(c, 409, 4090, 'Codex access_token 已过期，且没有 refresh_token')
+      const refreshed = await refreshCodexAccessToken(credentials)
+      credentials = refreshed.credentials
+      metaJson = JSON.stringify(refreshed.meta)
+      cipher = await encryptSecret(JSON.stringify(refreshed.credentials), c.env.CREDENTIAL_SECRET)
+    }
+
+    const usage = await fetchCodexUsage(credentials)
+    metaJson = mergeCodexUsageIntoMeta(metaJson, usage)
+    if (cipher) {
+      await c.env.DB.prepare(
+        'UPDATE upstream_accounts SET credential_ciphertext = ?, credential_meta_json = ?, updated_at = CURRENT_TIMESTAMP, last_error_message = NULL WHERE id = ?',
+      )
+        .bind(cipher, metaJson, id)
+        .run()
+    } else {
+      await c.env.DB.prepare('UPDATE upstream_accounts SET credential_meta_json = ?, updated_at = CURRENT_TIMESTAMP, last_error_message = NULL WHERE id = ?')
+        .bind(metaJson, id)
+        .run()
+    }
+    await writeAudit(c.env, { actorUserId: c.get('adminUser').id, action: 'upstream_account.codex_usage', resourceType: 'upstream_account', resourceId: id })
+    return ok(c, { id, credential_meta: parseJsonObject(metaJson), codex_usage: usage })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    await c.env.DB.prepare('UPDATE upstream_accounts SET last_error_message = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').bind(message, id).run()
+    return fail(c, 500, 5000, message)
+  }
 })
 
 adminRoutes.delete('/upstream-accounts/:id', async (c) => {

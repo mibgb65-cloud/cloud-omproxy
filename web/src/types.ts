@@ -51,6 +51,7 @@ export interface UpstreamAccountItem {
     plan_type?: string
     expires_at?: string
     refreshable?: boolean
+    codex_usage?: CodexUsageSnapshot
   } | null
   base_url: string | null
   status: 'active' | 'disabled' | 'error'
@@ -60,6 +61,24 @@ export interface UpstreamAccountItem {
   cooldown_until: string | null
   last_error_message: string | null
   last_used_at: string | null
+}
+
+export interface CodexUsageWindow {
+  used_percent: number
+  available_percent: number
+  reset_after_seconds?: number
+  reset_at?: string
+  window_minutes?: number
+}
+
+export interface CodexUsageSnapshot {
+  updated_at: string
+  plan_type?: string
+  limit_reached?: boolean
+  five_hour?: CodexUsageWindow
+  seven_day?: CodexUsageWindow
+  primary?: CodexUsageWindow
+  secondary?: CodexUsageWindow
 }
 
 export interface UsageLogItem {

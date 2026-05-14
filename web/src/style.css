@@ -267,7 +267,7 @@ h2 {
 }
 
 .content {
-  width: min(1280px, 100%);
+  width: 100%;
   padding: 28px 22px 40px;
 }
 
@@ -530,6 +530,44 @@ h2 {
   font-size: 12px;
   font-weight: 800;
   line-height: 1.6;
+}
+
+.quota-stack {
+  min-width: 190px;
+  display: grid;
+  gap: 7px;
+}
+
+.quota-window {
+  display: grid;
+  gap: 4px;
+}
+
+.quota-window__head,
+.quota-window__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.quota-window__head span,
+.quota-window__meta {
+  color: var(--app-muted);
+}
+
+.quota-track {
+  height: 7px;
+  border: 1px solid var(--app-border);
+  background: var(--app-subtle);
+}
+
+.quota-track span {
+  display: block;
+  height: 100%;
+  background: var(--app-inverse);
 }
 
 .form-grid {

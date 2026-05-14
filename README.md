@@ -100,6 +100,8 @@ Accepted input:
 
 If the JSON contains `refresh_token`, Cloud OMProxy can refresh the Codex access token automatically. If it only contains `access_token`, the account can be used only until that token expires.
 
+Codex quota refresh uses `https://chatgpt.com/backend-api/wham/usage`, matching OmniProxy's active Codex quota query. The admin table also updates the latest quota snapshot when Codex upstream responses include `x-codex-*` rate-limit headers.
+
 For Codex CLI style clients, use:
 
 ```text

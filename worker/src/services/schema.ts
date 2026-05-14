@@ -208,7 +208,17 @@ VALUES
 `
 
 export async function initializeDatabase(db: D1Database) {
-  const result = await db.exec(initialSchemaSql)
+  const statements = initialSchemaSql
+    .split(';')
+    .map((statement) => statement.trim())
+    .filter(Boolean)
+
+  let executed = 0
+  for (const statement of statements) {
+    await db.prepare(statement).run()
+    executed += 1
+  }
+
   const tables =
     (
       await db
@@ -216,7 +226,7 @@ export async function initializeDatabase(db: D1Database) {
         .all<{ name: string }>()
     ).results ?? []
   return {
-    result,
+    statements_executed: executed,
     tables: tables.map((table) => table.name),
   }
 }

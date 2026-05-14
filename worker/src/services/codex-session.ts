@@ -3,8 +3,12 @@ import { sha256Hex } from '../utils/crypto'
 const OPENAI_CODEX_CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann'
 const OPENAI_TOKEN_URL = 'https://auth.openai.com/oauth/token'
 const OPENAI_CODEX_USAGE_URL = 'https://chatgpt.com/backend-api/wham/usage'
+const OPENAI_CODEX_RESPONSES_URL = 'https://chatgpt.com/backend-api/codex/responses'
 const OPENAI_REFRESH_SCOPE = 'openid profile email'
 const CODEX_IMPORT_CLOCK_SKEW_SECONDS = 120
+const CODEX_PROBE_MODEL = 'gpt-5.4'
+const CODEX_PROBE_VERSION = '0.125.0'
+const CODEX_USER_AGENT = 'codex_cli_rs/0.125.0'
 
 export interface CodexSessionCredentials {
   access_token: string
@@ -516,29 +520,104 @@ export function parseCodexUsagePayload(payload: unknown, now = new Date()): Code
   }
 }
 
+function parseJsonText(text: string): unknown {
+  if (!text.trim()) return null
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return null
+  }
+}
+
+function errorMessageFromPayload(payload: unknown): string {
+  if (!isRecord(payload)) return ''
+  if (typeof payload.message === 'string') return payload.message
+  if (typeof payload.detail === 'string') return payload.detail
+  if (typeof payload.error === 'string') return payload.error
+  if (isRecord(payload.error)) {
+    if (typeof payload.error.message === 'string') return payload.error.message
+    if (typeof payload.error.type === 'string') return payload.error.type
+  }
+  return ''
+}
+
+function responseErrorSuffix(payload: unknown, rawText: string): string {
+  const message = errorMessageFromPayload(payload) || rawText.trim()
+  if (!message) return ''
+  return `: ${message.slice(0, 300)}`
+}
+
+function codexAuthHeaders(credentials: CodexSessionCredentials, accountId: string, accept: string): HeadersInit {
+  return {
+    Accept: accept,
+    Authorization: `Bearer ${credentials.access_token}`,
+    'ChatGPT-Account-Id': accountId,
+  }
+}
+
+async function fetchCodexUsageFromWham(credentials: CodexSessionCredentials, accountId: string): Promise<{ snapshot?: CodexUsageSnapshot; status?: number; message?: string }> {
+  const response = await fetch(OPENAI_CODEX_USAGE_URL, {
+    method: 'GET',
+    headers: codexAuthHeaders(credentials, accountId, 'application/json'),
+  })
+  const rawText = await response.text().catch(() => '')
+  const payload = parseJsonText(rawText)
+  if (!response.ok) {
+    return { status: response.status, message: `Codex usage query failed: status ${response.status}${responseErrorSuffix(payload, rawText)}` }
+  }
+  const snapshot = parseCodexUsagePayload(payload) || parseCodexUsageHeaders(response.headers)
+  if (!snapshot) return { status: response.status, message: 'Codex usage response did not include quota data' }
+  return { snapshot }
+}
+
+async function fetchCodexUsageFromProbe(credentials: CodexSessionCredentials, accountId: string): Promise<CodexUsageSnapshot> {
+  const response = await fetch(OPENAI_CODEX_RESPONSES_URL, {
+    method: 'POST',
+    headers: {
+      ...codexAuthHeaders(credentials, accountId, 'text/event-stream'),
+      'Content-Type': 'application/json',
+      'OpenAI-Beta': 'responses=experimental',
+      Originator: 'codex_cli_rs',
+      Version: CODEX_PROBE_VERSION,
+      'User-Agent': CODEX_USER_AGENT,
+    },
+    body: JSON.stringify({
+      model: CODEX_PROBE_MODEL,
+      input: [
+        {
+          role: 'user',
+          content: [{ type: 'input_text', text: 'hi' }],
+        },
+      ],
+      instructions: 'Reply with ok.',
+      stream: true,
+      store: false,
+      max_output_tokens: 1,
+    }),
+  })
+  const snapshot = parseCodexUsageHeaders(response.headers)
+  if (snapshot) return snapshot
+  const rawText = await response.text().catch(() => '')
+  const payload = parseJsonText(rawText)
+  if (!response.ok) throw new Error(`Codex usage probe failed: status ${response.status}${responseErrorSuffix(payload, rawText)}`)
+  throw new Error('Codex usage probe response did not include quota headers')
+}
+
 export async function fetchCodexUsage(credentials: CodexSessionCredentials): Promise<CodexUsageSnapshot> {
   normalizeCodexCredentialIdentity(credentials)
   const accountId = codexAccountId(credentials)
   if (!accountId) throw new Error('Codex account_id not found; please re-import the original auth.json that contains tokens.account_id')
-  const response = await fetch(OPENAI_CODEX_USAGE_URL, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      Authorization: `Bearer ${credentials.access_token}`,
-      'ChatGPT-Account-Id': accountId,
-    },
-  })
-  const payload = (await response.json().catch(() => null)) as unknown
-  if (!response.ok) {
-    throw new Error(`Codex usage query failed: status ${response.status}`)
+  const usageResult = await fetchCodexUsageFromWham(credentials, accountId)
+  if (usageResult.snapshot) return usageResult.snapshot
+  if (usageResult.status === 401 || usageResult.status === 403) {
+    try {
+      return await fetchCodexUsageFromProbe(credentials, accountId)
+    } catch (error) {
+      const fallbackMessage = error instanceof Error ? error.message : String(error)
+      throw new Error(`${usageResult.message}; fallback ${fallbackMessage}`)
+    }
   }
-  const snapshot = parseCodexUsagePayload(payload)
-  if (!snapshot) {
-    const headersSnapshot = parseCodexUsageHeaders(response.headers)
-    if (headersSnapshot) return headersSnapshot
-    throw new Error('Codex usage response did not include quota data')
-  }
-  return snapshot
+  throw new Error(usageResult.message || 'Codex usage response did not include quota data')
 }
 
 export function mergeCodexUsageIntoMeta(metaJson: string | null, snapshot: CodexUsageSnapshot): string {

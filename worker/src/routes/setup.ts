@@ -1,8 +1,10 @@
 import { Hono } from 'hono'
+import type { Context } from 'hono'
 import type { AppEnv } from '../types'
 import { hashPassword } from '../utils/crypto'
 import { fail, getBearerToken, ok, readJson } from '../utils/http'
 import { writeAudit } from '../services/audit'
+import { initializeDatabase } from '../services/schema'
 
 interface BootstrapBody {
   email?: string
@@ -11,6 +13,21 @@ interface BootstrapBody {
 }
 
 export const setupRoutes = new Hono<AppEnv>()
+
+export async function initDatabaseRoute(c: Context<AppEnv>) {
+  const token = c.req.param('token') || c.req.param('secret')
+  if (!c.env.ADMIN_BOOTSTRAP_TOKEN || token !== c.env.ADMIN_BOOTSTRAP_TOKEN) {
+    return fail(c, 401, 4010, 'Init token 无效')
+  }
+
+  const result = await initializeDatabase(c.env.DB)
+  return ok(c, {
+    success: true,
+    tables: result.tables,
+  })
+}
+
+setupRoutes.get('/init/:token', initDatabaseRoute)
 
 setupRoutes.post('/bootstrap-admin', async (c) => {
   const token = getBearerToken(c.req.header('Authorization') ?? null)
@@ -45,4 +62,3 @@ setupRoutes.post('/bootstrap-admin', async (c) => {
 
   return ok(c, { id, email: body.email, display_name: body.display_name, role: 'admin' })
 })
-

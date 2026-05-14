@@ -71,7 +71,24 @@ ADMIN_BOOTSTRAP_TOKEN
 
 ## 初始化数据库
 
-首次部署后，需要执行 D1 migration。
+首次部署后，直接访问初始化地址：
+
+```text
+https://你的 Worker 域名/init/<ADMIN_BOOTSTRAP_TOKEN>
+```
+
+例如：
+
+```text
+https://cloud-omproxy.example.workers.dev/init/你的初始化口令
+```
+
+接口会创建表、索引和默认数据。这个操作是幂等的，重复访问不会清空已有数据。
+
+备用方式：
+
+- 打开 Cloudflare D1 控制台，找到自动创建的 `cloud_omproxy` 数据库。
+- 把 `worker/migrations/0001_initial.sql` 的内容复制进去执行。
 
 命令行方式：
 
@@ -79,8 +96,6 @@ ADMIN_BOOTSTRAP_TOKEN
 cd worker
 npx wrangler d1 migrations apply cloud_omproxy --remote
 ```
-
-如果只想使用 Dashboard，可以打开 Cloudflare D1 控制台，找到自动创建的 `cloud_omproxy` 数据库，把 `worker/migrations/0001_initial.sql` 的内容复制进去执行。
 
 ## 初始化管理员
 
@@ -107,6 +122,6 @@ Content-Type: application/json
 - fork 仓库
 - 在 Cloudflare Dashboard 导入仓库
 - 设置运行时 Secrets
-- 首次部署后执行 D1 migration
+- 首次部署后访问 `/init/<ADMIN_BOOTSTRAP_TOKEN>` 初始化数据库
 
 仓库里不需要保存账号专属的 D1/KV/R2 ID。

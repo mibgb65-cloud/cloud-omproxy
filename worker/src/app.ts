@@ -4,7 +4,7 @@ import type { AppEnv } from './types'
 import { adminRoutes } from './routes/admin'
 import { authRoutes } from './routes/auth'
 import { gatewayRoutes } from './routes/gateway'
-import { setupRoutes } from './routes/setup'
+import { initDatabaseRoute, setupRoutes } from './routes/setup'
 import { fail } from './utils/http'
 
 export const app = new Hono<AppEnv>()
@@ -20,8 +20,9 @@ app.onError((error, c) => {
 })
 
 app.get('/health', (c) => c.json({ status: 'ok' }))
+app.get('/init/:token', initDatabaseRoute)
+app.get('/api/init/:token', initDatabaseRoute)
 app.route('/api/v1/setup', setupRoutes)
 app.route('/api/v1/auth', authRoutes)
 app.route('/api/v1/admin', adminRoutes)
 app.route('/', gatewayRoutes)
-

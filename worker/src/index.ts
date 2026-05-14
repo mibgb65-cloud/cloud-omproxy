@@ -4,6 +4,7 @@ import type { Env } from './types'
 function shouldRunWorker(pathname: string): boolean {
   return (
     pathname === '/health' ||
+    pathname.startsWith('/init/') ||
     pathname.startsWith('/api/') ||
     pathname.startsWith('/v1/') ||
     pathname.startsWith('/v1beta/') ||
@@ -25,4 +26,3 @@ export default {
     // Reserved for future R2 auto-backups and daily cleanup.
   },
 }
-

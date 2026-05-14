@@ -61,9 +61,19 @@ wrangler secret put CREDENTIAL_SECRET
 wrangler secret put ADMIN_BOOTSTRAP_TOKEN
 ```
 
+## Initialize Database
+
+After the first deployment, initialize D1 with:
+
+```text
+GET /init/<ADMIN_BOOTSTRAP_TOKEN>
+```
+
+This creates tables, indexes and seed data. It is safe to call more than once.
+
 ## Bootstrap Admin
 
-After binding D1 and running migrations, create the first admin:
+After initializing D1, create the first admin:
 
 ```http
 POST /api/v1/setup/bootstrap-admin

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import BrandIcon from '@/components/BrandIcon.vue'
 import { useAuthStore } from '@/stores/auth'
 
 const router = useRouter()
@@ -28,21 +29,28 @@ async function submit() {
 </script>
 
 <template>
-  <div class="login-page">
+  <main class="login-page">
     <form class="login-panel" @submit.prevent="submit">
-      <h1>Private Family Gateway</h1>
-      <p>家庭私用 AI API 网关</p>
+      <div class="login-brand">
+        <div class="brand-logo">
+          <BrandIcon />
+        </div>
+        <p class="eyebrow">PRIVATE AI GATEWAY</p>
+        <h1>Cloud OMProxy</h1>
+        <p class="muted">管理上游账号、密钥和使用记录。</p>
+      </div>
       <label>
         邮箱
-        <input v-model="form.email" type="email" autocomplete="username" />
+        <input v-model.trim="form.email" type="email" autocomplete="username" />
       </label>
       <label>
         密码
         <input v-model="form.password" type="password" autocomplete="current-password" />
       </label>
       <div v-if="error" class="error">{{ error }}</div>
-      <button class="primary" :disabled="loading">{{ loading ? '登录中' : '登录' }}</button>
+      <button class="primary" :disabled="loading">
+        {{ loading ? '登录中' : '登录' }}
+      </button>
     </form>
-  </div>
+  </main>
 </template>
-

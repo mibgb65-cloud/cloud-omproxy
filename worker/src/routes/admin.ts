@@ -309,13 +309,23 @@ adminRoutes.get('/upstream-accounts', async (c) => {
   const clause = where.join(' AND ')
   const data = await listWithCount<Record<string, unknown>>(
     c.env,
-    `SELECT a.id, a.name, a.platform, a.auth_type, a.base_url, a.priority, a.status, a.cooldown_until, a.failure_count, a.last_error_message, a.last_used_at, a.created_at FROM upstream_accounts a WHERE ${clause} ORDER BY a.priority ASC, a.id DESC`,
+    `SELECT a.id, a.name, a.platform, a.auth_type, a.base_url, a.priority, a.status, a.cooldown_until, a.failure_count, a.last_error_message, a.last_used_at, a.created_at, COALESCE((SELECT group_concat(ag.group_id) FROM account_groups ag WHERE ag.account_id = a.id), '') AS group_ids_csv, COALESCE((SELECT group_concat(g.name) FROM account_groups ag JOIN groups g ON g.id = ag.group_id WHERE ag.account_id = a.id), '') AS group_names_csv FROM upstream_accounts a WHERE ${clause} ORDER BY a.priority ASC, a.id DESC`,
     `SELECT COUNT(*) AS total FROM upstream_accounts a WHERE ${clause}`,
     params,
     page,
     pageSize,
     offset,
   )
+  data.items = data.items.map(({ group_ids_csv, group_names_csv, ...item }) => ({
+    ...item,
+    group_ids: String(group_ids_csv || '')
+      .split(',')
+      .filter(Boolean)
+      .map(Number),
+    group_names: String(group_names_csv || '')
+      .split(',')
+      .filter(Boolean),
+  }))
   return ok(c, data)
 })
 

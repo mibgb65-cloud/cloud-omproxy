@@ -43,8 +43,11 @@ export interface UpstreamAccountItem {
   name: string
   platform: 'anthropic' | 'openai' | 'gemini'
   auth_type: 'api_key' | 'oauth'
+  base_url: string | null
   status: 'active' | 'disabled' | 'error'
   priority: number
+  group_ids: number[]
+  group_names: string[]
   cooldown_until: string | null
   last_error_message: string | null
   last_used_at: string | null
@@ -80,4 +83,3 @@ export interface BackupItem {
   created_at: string
   completed_at: string | null
 }
-

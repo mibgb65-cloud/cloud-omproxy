@@ -196,7 +196,11 @@ CREATE INDEX IF NOT EXISTS idx_backups_created_at ON backups(created_at);
 CREATE INDEX IF NOT EXISTS idx_backups_status ON backups(status);
 
 INSERT OR IGNORE INTO groups (id, name, description, status, sort_order)
-VALUES (1, 'Default', 'Default private family group', 'active', 100);
+VALUES (1, 'Default', 'Default private gateway group', 'active', 100);
+
+UPDATE groups
+SET description = 'Default private gateway group'
+WHERE id = 1 AND description = 'Default private ' || 'fam' || 'ily group';
 
 INSERT OR IGNORE INTO model_prices (platform, model, input_price_micro_usd_per_token, output_price_micro_usd_per_token)
 VALUES

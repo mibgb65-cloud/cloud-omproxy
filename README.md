@@ -1,6 +1,6 @@
-# Private Family Gateway
+# Cloud OMProxy
 
-Private Family Gateway is a small Cloudflare Workers based AI API gateway for a private family or small team.
+Cloud OMProxy is a small Cloudflare Workers based AI API gateway for private teams and personal deployments.
 
 It provides:
 

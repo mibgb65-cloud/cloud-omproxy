@@ -9,6 +9,8 @@ const CODEX_IMPORT_CLOCK_SKEW_SECONDS = 120
 const CODEX_PROBE_MODEL = 'gpt-5.4'
 const CODEX_PROBE_VERSION = '0.125.0'
 const CODEX_USER_AGENT = 'codex_cli_rs/0.125.0'
+const CHATGPT_WORKER_BLOCKED_MESSAGE =
+  'chatgpt.com returned a 403 HTML challenge page to this Cloudflare Worker; active Codex quota refresh cannot run directly from Workers. Use a non-Cloudflare relay for Codex quota refresh, or rely on x-codex quota headers captured from successful Codex requests.'
 
 export interface CodexSessionCredentials {
   access_token: string
@@ -541,7 +543,13 @@ function errorMessageFromPayload(payload: unknown): string {
   return ''
 }
 
+function looksLikeHtmlResponse(text: string): boolean {
+  const trimmed = text.trim().slice(0, 200).toLowerCase()
+  return trimmed.startsWith('<!doctype html') || trimmed.startsWith('<html') || trimmed.includes('<html')
+}
+
 function responseErrorSuffix(payload: unknown, rawText: string): string {
+  if (looksLikeHtmlResponse(rawText)) return `: ${CHATGPT_WORKER_BLOCKED_MESSAGE}`
   const message = errorMessageFromPayload(payload) || rawText.trim()
   if (!message) return ''
   return `: ${message.slice(0, 300)}`
@@ -614,6 +622,9 @@ export async function fetchCodexUsage(credentials: CodexSessionCredentials): Pro
       return await fetchCodexUsageFromProbe(credentials, accountId)
     } catch (error) {
       const fallbackMessage = error instanceof Error ? error.message : String(error)
+      if (usageResult.message?.includes(CHATGPT_WORKER_BLOCKED_MESSAGE) && fallbackMessage.includes(CHATGPT_WORKER_BLOCKED_MESSAGE)) {
+        throw new Error(CHATGPT_WORKER_BLOCKED_MESSAGE)
+      }
       throw new Error(`${usageResult.message}; fallback ${fallbackMessage}`)
     }
   }

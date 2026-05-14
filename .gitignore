@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+*.local
+*.log
+worker/.wrangler/
+worker/dist/
+web/dist/
+web/node_modules/
+worker/node_modules/
+

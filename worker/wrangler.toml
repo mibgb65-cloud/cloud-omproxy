@@ -1,0 +1,45 @@
+name = "cloud-omproxy"
+main = "src/index.ts"
+compatibility_date = "2026-05-14"
+keep_vars = true
+
+[observability]
+enabled = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "cloud_omproxy"
+database_id = "replace-with-your-d1-database-id"
+
+[[kv_namespaces]]
+binding = "API_KEY_CACHE"
+id = "replace-with-api-key-cache-kv-id"
+
+[[kv_namespaces]]
+binding = "SETTINGS_CACHE"
+id = "replace-with-settings-cache-kv-id"
+
+[[kv_namespaces]]
+binding = "RATE_LIMIT"
+id = "replace-with-rate-limit-kv-id"
+
+[[kv_namespaces]]
+binding = "GATEWAY_STATE"
+id = "replace-with-gateway-state-kv-id"
+
+[[r2_buckets]]
+binding = "BACKUPS"
+bucket_name = "cloud-omproxy-backups"
+
+[assets]
+binding = "ASSETS"
+directory = "../web/dist"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+[triggers]
+crons = ["0 18 * * *"]
+
+[build]
+command = "npm --prefix ../web install && npm --prefix ../web run build"
+

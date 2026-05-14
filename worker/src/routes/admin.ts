@@ -13,6 +13,7 @@ import {
   mergeCodexUsageIntoMeta,
   type CodexImportItem,
   type CodexImportMessage,
+  normalizeCodexCredentialIdentity,
   normalizeCodexImportEntry,
   parseCodexImportEntries,
   refreshCodexAccessToken,
@@ -104,7 +105,7 @@ function codexCredentialsFromJson(value: string): CodexSessionCredentials {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Codex credential payload is invalid')
   const credentials = parsed as Partial<CodexSessionCredentials>
   if (!credentials.access_token || typeof credentials.access_token !== 'string') throw new Error('Codex access_token not found')
-  return credentials as CodexSessionCredentials
+  return normalizeCodexCredentialIdentity(credentials as CodexSessionCredentials)
 }
 
 adminRoutes.get('/dashboard/summary', async (c) => {
@@ -564,7 +565,7 @@ adminRoutes.post('/upstream-accounts/:id/codex-usage', async (c) => {
     if (isCodexTokenExpired(credentials)) {
       if (!credentials.refresh_token) return fail(c, 409, 4090, 'Codex access_token 已过期，且没有 refresh_token')
       const refreshed = await refreshCodexAccessToken(credentials)
-      credentials = refreshed.credentials
+      credentials = normalizeCodexCredentialIdentity(refreshed.credentials)
       metaJson = JSON.stringify(refreshed.meta)
       cipher = await encryptSecret(JSON.stringify(refreshed.credentials), c.env.CREDENTIAL_SECRET)
     }

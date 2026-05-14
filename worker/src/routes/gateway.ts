@@ -7,8 +7,10 @@ import { authenticateGatewayKey } from '../services/gateway-auth'
 import { estimateCost, recordUsage } from '../services/usage'
 import {
   type CodexSessionCredentials,
+  codexAccountId,
   isCodexTokenExpired,
   mergeCodexUsageIntoMeta,
+  normalizeCodexCredentialIdentity,
   parseCodexUsageHeaders,
   refreshCodexAccessToken,
 } from '../services/codex-session'
@@ -127,7 +129,8 @@ function buildHeaders(original: Request, platform: Platform, account: UpstreamAc
   } else if (platform === 'openai') {
     headers.set('Authorization', `Bearer ${credential.token}`)
     if (account.auth_type === 'codex_session') {
-      if (credential.codex?.chatgpt_account_id) headers.set('chatgpt-account-id', credential.codex.chatgpt_account_id)
+      const accountId = credential.codex ? codexAccountId(credential.codex) : ''
+      if (accountId) headers.set('chatgpt-account-id', accountId)
       if (!headers.has('accept')) headers.set('accept', endpoint.endsWith('/compact') ? 'application/json' : 'text/event-stream')
       if (!headers.has('openai-beta')) headers.set('openai-beta', 'responses=experimental')
       if (!headers.has('originator')) headers.set('originator', 'codex_cli_rs')
@@ -150,7 +153,7 @@ function codexCredentialFromJson(text: string): CodexSessionCredentials {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('Invalid Codex credential payload')
   const credentials = parsed as Partial<CodexSessionCredentials>
   if (!credentials.access_token || typeof credentials.access_token !== 'string') throw new Error('Codex access_token not found')
-  return credentials as CodexSessionCredentials
+  return normalizeCodexCredentialIdentity(credentials as CodexSessionCredentials)
 }
 
 async function resolveCredential(env: AppEnv['Bindings'], account: UpstreamAccount, secret: string): Promise<ResolvedCredential> {
@@ -163,7 +166,7 @@ async function resolveCredential(env: AppEnv['Bindings'], account: UpstreamAccou
       throw new Error('Codex access_token expired and refresh_token is missing')
     }
     const refreshed = await refreshCodexAccessToken(credentials)
-    credentials = refreshed.credentials
+    credentials = normalizeCodexCredentialIdentity(refreshed.credentials)
     account.credential_meta_json = JSON.stringify(refreshed.meta)
     await env.DB.prepare(
       'UPDATE upstream_accounts SET credential_ciphertext = ?, credential_meta_json = ?, updated_at = CURRENT_TIMESTAMP, last_error_message = NULL WHERE id = ?',

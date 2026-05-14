@@ -12,6 +12,7 @@ export interface CodexSessionCredentials {
   id_token?: string
   expires_at?: string
   email?: string
+  account_id?: string
   chatgpt_account_id?: string
   chatgpt_user_id?: string
   organization_id?: string
@@ -297,6 +298,7 @@ function enrichFromJwt(item: Partial<CodexSessionCredentials>, token: string, va
   }
 
   item.chatgpt_account_id ||= stringValue(openaiAuth.chatgpt_account_id)
+  item.account_id ||= item.chatgpt_account_id
   item.chatgpt_user_id ||= stringValue(openaiAuth.chatgpt_user_id) || stringValue(openaiAuth.user_id) || stringValue(claims.sub)
   item.plan_type ||= stringValue(openaiAuth.chatgpt_plan_type)
   item.organization_id ||= stringValue(openaiAuth.poid)
@@ -349,6 +351,10 @@ export async function normalizeCodexImportEntry(entry: CodexImportEntry): Promis
     credentials.email = firstString(entry.value, ['email'], ['user', 'email'])
     credentials.chatgpt_account_id = firstString(
       entry.value,
+      ['tokens', 'account_id'],
+      ['tokens', 'accountId'],
+      ['tokens', 'chatgpt_account_id'],
+      ['tokens', 'chatgptAccountId'],
       ['chatgpt_account_id'],
       ['chatgptAccountId'],
       ['account_id'],
@@ -357,6 +363,7 @@ export async function normalizeCodexImportEntry(entry: CodexImportEntry): Promis
       ['account', 'account_id'],
       ['account', 'chatgpt_account_id'],
     )
+    credentials.account_id = credentials.chatgpt_account_id
     credentials.chatgpt_user_id = firstString(entry.value, ['chatgpt_user_id'], ['chatgptUserId'], ['user_id'], ['userId'], ['user', 'id'])
     credentials.plan_type = firstString(entry.value, ['plan_type'], ['planType'], ['account', 'plan_type'], ['account', 'planType'])
     credentials.organization_id = firstString(entry.value, ['organization_id'], ['organizationId'], ['org_id'], ['orgId'])
@@ -401,6 +408,7 @@ export async function normalizeCodexImportEntry(entry: CodexImportEntry): Promis
 }
 
 export function buildCodexMeta(credentials: CodexSessionCredentials, fingerprint: string): CodexSessionMeta {
+  normalizeCodexCredentialIdentity(credentials)
   return {
     email: credentials.email,
     chatgpt_account_id: credentials.chatgpt_account_id,
@@ -412,6 +420,18 @@ export function buildCodexMeta(credentials: CodexSessionCredentials, fingerprint
     imported_at: new Date().toISOString(),
     access_token_sha256: fingerprint,
   }
+}
+
+export function codexAccountId(credentials: CodexSessionCredentials): string {
+  return stringValue(credentials.chatgpt_account_id) || stringValue(credentials.account_id)
+}
+
+export function normalizeCodexCredentialIdentity(credentials: CodexSessionCredentials): CodexSessionCredentials {
+  credentials.chatgpt_account_id ||= stringValue(credentials.account_id)
+  if (credentials.id_token) enrichFromJwt(credentials, credentials.id_token, false, [])
+  if (credentials.access_token) enrichFromJwt(credentials, credentials.access_token, false, [])
+  credentials.account_id ||= stringValue(credentials.chatgpt_account_id)
+  return credentials
 }
 
 export function parseCodexUsageHeaders(headers: Headers, now = new Date()): CodexUsageSnapshot | null {
@@ -497,12 +517,15 @@ export function parseCodexUsagePayload(payload: unknown, now = new Date()): Code
 }
 
 export async function fetchCodexUsage(credentials: CodexSessionCredentials): Promise<CodexUsageSnapshot> {
+  normalizeCodexCredentialIdentity(credentials)
+  const accountId = codexAccountId(credentials)
+  if (!accountId) throw new Error('Codex account_id not found; please re-import the original auth.json that contains tokens.account_id')
   const response = await fetch(OPENAI_CODEX_USAGE_URL, {
     method: 'GET',
     headers: {
       Accept: 'application/json',
       Authorization: `Bearer ${credentials.access_token}`,
-      ...(credentials.chatgpt_account_id ? { 'ChatGPT-Account-Id': credentials.chatgpt_account_id } : {}),
+      'ChatGPT-Account-Id': accountId,
     },
   })
   const payload = (await response.json().catch(() => null)) as unknown

@@ -1,8 +1,45 @@
 <svg width="256" height="256" viewBox="0 0 256 256" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <style>
+    @media (prefers-reduced-motion: no-preference) {
+      .om-stroke {
+        stroke-dasharray: 1;
+        stroke-dashoffset: 1;
+        animation: draw 1.1s ease-out both;
+      }
+
+      .om-stroke:nth-of-type(2) {
+        animation-delay: .12s;
+      }
+
+      .om-stroke:nth-of-type(3) {
+        animation-delay: .24s;
+      }
+
+      .signal {
+        animation: blink 2.4s steps(1, end) infinite;
+      }
+
+      @keyframes draw {
+        to {
+          stroke-dashoffset: 0;
+        }
+      }
+
+      @keyframes blink {
+        0%, 72%, 100% {
+          opacity: 1;
+        }
+
+        74%, 82% {
+          opacity: .25;
+        }
+      }
+    }
+  </style>
   <rect x="16" y="16" width="224" height="224" fill="#ffffff" stroke="#111111" stroke-width="16"/>
-  <path d="M62 154V102C62 85.4315 75.4315 72 92 72C108.569 72 122 85.4315 122 102V154" stroke="#111111" stroke-width="18" stroke-linecap="square"/>
-  <path d="M134 154V72H164C184.987 72 202 89.0132 202 110C202 130.987 184.987 148 164 148H152" stroke="#111111" stroke-width="18" stroke-linecap="square"/>
-  <path d="M58 188H198" stroke="#111111" stroke-width="16" stroke-linecap="square"/>
-  <path d="M38 38H80" stroke="#111111" stroke-width="10" stroke-linecap="square"/>
-  <path d="M176 218H218" stroke="#111111" stroke-width="10" stroke-linecap="square"/>
+  <path class="om-stroke" pathLength="1" d="M62 154V102C62 85.4315 75.4315 72 92 72C108.569 72 122 85.4315 122 102V154" stroke="#111111" stroke-width="18" stroke-linecap="square"/>
+  <path class="om-stroke" pathLength="1" d="M134 154V72H164C184.987 72 202 89.0132 202 110C202 130.987 184.987 148 164 148H152" stroke="#111111" stroke-width="18" stroke-linecap="square"/>
+  <path class="om-stroke" pathLength="1" d="M58 188H198" stroke="#111111" stroke-width="16" stroke-linecap="square"/>
+  <path class="signal" d="M38 38H80" stroke="#111111" stroke-width="10" stroke-linecap="square"/>
+  <path class="signal" d="M176 218H218" stroke="#111111" stroke-width="10" stroke-linecap="square"/>
 </svg>

@@ -190,7 +190,7 @@ onMounted(load)
         <div class="field">
           <span>平台</span>
           <select v-model="form.platform">
-            <option value="openai">OpenAI</option>
+            <option value="openai">OpenAI / Codex</option>
             <option value="anthropic">Anthropic</option>
             <option value="gemini">Gemini</option>
           </select>
@@ -201,7 +201,12 @@ onMounted(load)
         </div>
         <div class="field">
           <span>Base URL</span>
-          <input v-model.trim="form.base_url" placeholder="留空使用默认地址" />
+          <input v-model.trim="form.base_url" placeholder="留空使用默认地址，例如 https://api.openai.com" />
+        </div>
+        <div class="field field--full">
+          <div class="hint-box">
+            OpenAI/Codex 选择 OpenAI / Codex；凭证填写 OpenAI API Key。官方接口 Base URL 留空，第三方兼容接口填写域名根地址，不要重复写 /v1。
+          </div>
         </div>
         <div class="field">
           <span>优先级</span>

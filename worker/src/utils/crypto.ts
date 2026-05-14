@@ -1,4 +1,5 @@
 const encoder = new TextEncoder()
+const passwordHashIterations = 100000
 
 function toHex(bytes: ArrayBuffer): string {
   return [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('')
@@ -45,7 +46,7 @@ export function keyPrefix(apiKey: string): string {
 export async function hashPassword(password: string): Promise<string> {
   const salt = new Uint8Array(16)
   crypto.getRandomValues(salt)
-  const iterations = 120000
+  const iterations = passwordHashIterations
   const key = await crypto.subtle.importKey('raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits'])
   const bits = await crypto.subtle.deriveBits(
     { name: 'PBKDF2', hash: 'SHA-256', salt: toArrayBuffer(salt), iterations },
